@@ -28,191 +28,251 @@ random.seed(0)
 # The number of key features for each data set.
 ks = {'RNA' : 10}
 
-def create_data(datatype, n = 1000): 
-        dir_res = "Results200/"
+def split_train_val(sample_list, ratio = 0.8):
+    sample_num = len(sample_list)
+    np.random.shuffle(sample_list)
+    
+    train_size = int(sample_num * 0.8)
+    val_size = sample_num - train_size
+#    test_size = sample_num - train_size - val_size
+    
+    train_list = sample_list[0:train_size]
+    val_list = sample_list[train_size+1:]
+#    test_list = sample_list[train_size+val_size+1:]
+    
+    return train_list, val_list
 
+def load_data_all(data_dir, choice, feature_list=None):
+    data_dir = data_dir
+    if choice == 'exon':
+        X_data_dir = os.path.join(data_dir, 'COPDGene_Freeze1_RNAseq_exonicParts_logCPM_normalized')
+    elif choice == 'gene':
+        X_data_dir = os.path.join(data_dir, 'COPDGene_Freeze1_RNAseq_genes_logCPM_normalized')
+    elif choice == 'transcript':
+        if data_dir[-1] == '/':
+            data_dir = data_dir[:-1]
+        X_data_dir = os.path.join(data_dir+'2', 'COPDGene_Freeze1_RNAseq_transcripts_logCPM_normalized')
 
-        y_train = pickle.load(open(dir_res+"training_data.pkl", "rb"))
-        x_train = pickle.load(open(dir_res+"y_ns_training.pkl", "rb"))
-        y_val = pickle.load(open(dir_res+"test_data.pkl", "rb"))
-        x_val = pickle.load(open(dir_res+"y_ns_test.pkl", "rb"))
+    # loading data
+    f = open(os.path.join(X_data_dir, 'X_all.pickle'), 'rb')
+    X_all = pickle.load(f)
+    f.close()
 
+    Y_data_dir = os.path.join(data_dir, 'COPDGene_Freeze1_RNAseq_samples', 'SmokCigNow')
+    f = open(os.path.join(Y_data_dir, 'Y_all.pickle'), 'rb')
+    Y_all = pickle.load(f)
+    f.close()
+    if feature_list is not None:
+        X_all= X_all[:, feature_list]
+    return X_all, Y_all
+
+def construct_stratified_train_val(data_dir, choice, ratio=0.8, feature_list=None):
+    X_all, Y_all = load_data_all(data_dir, choice, feature_list=feature_list)
+    assert X_all.shape[0] == Y_all.shape[0]
+    sample_num_total = X_all.shape[0]
+    pos_list = np.where(Y_all==1)
+    neg_list = np.where(Y_all==0)
+    
+    train_list_pos, val_list_pos = split_train_val(np.arange(sample_num_total)[pos_list])
+    train_list_neg, val_list_neg = split_train_val(np.arange(sample_num_total)[neg_list])
+    
+    train_list = np.concatenate((train_list_pos, train_list_neg), axis=0)
+    val_list = np.concatenate((val_list_pos, val_list_neg), axis=0)
+    
+    x_train = np.array(X_all[train_list, :], dtype=np.float32)
+    y_train = np.array(Y_all[train_list], dtype=np.float32)
+    x_val = np.array(X_all[val_list, :], dtype=np.float32)
+    y_val = np.array(Y_all[val_list], dtype=np.float32)
+    return x_train,y_train,x_val,y_val
     
 
-        y_val = y_val
-        y_train = y_train
+def create_data(datatype, n = 1000): 
+    '''dir_res = "Results200/"
 
 
-        mean = x_train.mean(axis=0)
+    y_train = pickle.load(open(dir_res+"training_data.pkl", "rb"))
+    x_train = pickle.load(open(dir_res+"y_ns_training.pkl", "rb"))
+    y_val = pickle.load(open(dir_res+"test_data.pkl", "rb"))
+    x_val = pickle.load(open(dir_res+"y_ns_test.pkl", "rb"))
 
-        std = x_train.std(axis=0)
-        x_train -= mean
-        x_train /= std
-        x_val -= mean
-        x_val /= std
-        datatypes_val = None
 
-        input_shape = x_train.shape[1]
 
-        return x_train,y_train,x_val,y_val,datatypes_val,input_shape
+    y_val = y_val
+    y_train = y_train'''
+
+    x_train,y_train,x_val,y_val = construct_stratified_train_val('/home/zifeng/Research/COPD/data_stranded', 'gene', ratio=0.8, feature_list=None)
+
+    mean = np.mean(x_train, axis=0)
+    print(x_train.shape)
+    
+    std = np.std(x_train, axis=0)
+    x_train -= mean
+    x_train /= std
+    x_val -= mean
+    x_val /= std
+    datatypes_val = None
+
+    input_shape = x_train.shape[1]
+
+    return x_train,y_train,x_val,y_val,datatypes_val,input_shape
 
     
 def create_rank(scores, k): 
-	"""
-	Compute rank of each feature based on weight.
-	
-	"""
-	scores = abs(scores)
-	n, d = scores.shape
-	ranks = []
-	for i, score in enumerate(scores):
-		# Random permutation to avoid bias due to equal weights.
-		idx = np.random.permutation(d) 
-		permutated_weights = score[idx]  
-		permutated_rank=(-permutated_weights).argsort().argsort()+1
-		rank = permutated_rank[np.argsort(idx)]
+    """
+    Compute rank of each feature based on weight.
+    
+    """
+    scores = abs(scores)
+    n, d = scores.shape
+    ranks = []
+    for i, score in enumerate(scores):
+        # Random permutation to avoid bias due to equal weights.
+        idx = np.random.permutation(d) 
+        permutated_weights = score[idx]  
+        permutated_rank=(-permutated_weights).argsort().argsort()+1
+        rank = permutated_rank[np.argsort(idx)]
 
-		ranks.append(rank)
+        ranks.append(rank)
 
-	return np.array(ranks)
+    return np.array(ranks)
 
 def compute_median_rank(scores, k, datatype_val = None):
-	ranks = create_rank(scores, k)
-	if datatype_val is None: 
-		median_ranks = np.median(ranks[:,:k], axis = 1)
-	else:
-		datatype_val = datatype_val[:len(scores)]
-		median_ranks1 = np.median(ranks[datatype_val == 'orange_skin',:][:,np.array([0,1,2,3,9])], 
-			axis = 1)
-		median_ranks2 = np.median(ranks[datatype_val == 'nonlinear_additive',:][:,np.array([4,5,6,7,9])], 
-			axis = 1)
-		median_ranks = np.concatenate((median_ranks1,median_ranks2), 0)
-	return median_ranks 
+    ranks = create_rank(scores, k)
+    if datatype_val is None: 
+        median_ranks = np.median(ranks[:,:k], axis = 1)
+    else:
+        datatype_val = datatype_val[:len(scores)]
+        median_ranks1 = np.median(ranks[datatype_val == 'orange_skin',:][:,np.array([0,1,2,3,9])], 
+            axis = 1)
+        median_ranks2 = np.median(ranks[datatype_val == 'nonlinear_additive',:][:,np.array([4,5,6,7,9])], 
+            axis = 1)
+        median_ranks = np.concatenate((median_ranks1,median_ranks2), 0)
+    return median_ranks 
 
 class Sample_Concrete(Layer):
-	"""
-	Layer for sample Concrete / Gumbel-Softmax variables. 
+    """
+    Layer for sample Concrete / Gumbel-Softmax variables. 
 
-	"""
-	def __init__(self, tau0, k, **kwargs): 
-		self.tau0 = tau0
-		self.k = k
-		super(Sample_Concrete, self).__init__(**kwargs)
+    """
+    def __init__(self, tau0, k, **kwargs): 
+        self.tau0 = tau0
+        self.k = k
+        super(Sample_Concrete, self).__init__(**kwargs)
 
-	def call(self, logits):   
-		# logits: [BATCH_SIZE, d]
-		logits_ = K.expand_dims(logits, -2)# [BATCH_SIZE, 1, d]
+    def call(self, logits):   
+        # logits: [BATCH_SIZE, d]
+        logits_ = K.expand_dims(logits, -2)# [BATCH_SIZE, 1, d]
 
-		batch_size = tf.shape(logits_)[0]
-		d = tf.shape(logits_)[2]
-		uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
-			minval = np.finfo(tf.float32.as_numpy_dtype).tiny,
-			maxval = 1.0)
+        batch_size = tf.shape(logits_)[0]
+        d = tf.shape(logits_)[2]
+        uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
+            minval = np.finfo(tf.float32.as_numpy_dtype).tiny,
+            maxval = 1.0)
 
-		gumbel = - K.log(-K.log(uniform))
-		noisy_logits = (gumbel + logits_)/self.tau0
-		samples = K.softmax(noisy_logits)
-		samples = K.max(samples, axis = 1) 
+        gumbel = - K.log(-K.log(uniform))
+        noisy_logits = (gumbel + logits_)/self.tau0
+        samples = K.softmax(noisy_logits)
+        samples = K.max(samples, axis = 1) 
 
-		# Explanation Stage output.
-		threshold = tf.expand_dims(tf.nn.top_k(logits, self.k, sorted = True)[0][:,-1], -1)
-		discrete_logits = tf.cast(tf.greater_equal(logits,threshold),tf.float32)
-		
-		return K.in_train_phase(samples, discrete_logits)
+        # Explanation Stage output.
+        threshold = tf.expand_dims(tf.nn.top_k(logits, self.k, sorted = True)[0][:,-1], -1)
+        discrete_logits = tf.cast(tf.greater_equal(logits,threshold),tf.float32)
+        
+        return K.in_train_phase(samples, discrete_logits)
 
-	def compute_output_shape(self, input_shape):
-		return input_shape 
+    def compute_output_shape(self, input_shape):
+        return input_shape 
 
 
 
 def L2X(datatype, train = True):
         # the whole thing is equation (5)
-	x_train,y_train,x_val,y_val,datatype_val, input_shape = create_data(datatype, 
-		n = int(1e6))
-	 
-	st1 = time.time()
-	st2 = st1
-	print (input_shape)
-	activation = 'relu'
-	# P(S|X) we train the model on this, for capturing the important features.
-	model_input = Input(shape=(input_shape,), dtype='float32') 
+    x_train,y_train,x_val,y_val,datatype_val, input_shape = create_data(datatype, 
+        n = int(1e6))
+     
+    st1 = time.time()
+    st2 = st1
+    print (input_shape)
+    activation = 'relu'
+    # P(S|X) we train the model on this, for capturing the important features.
+    model_input = Input(shape=(input_shape,), dtype='float32') 
 
-	net = Dense(100, activation=activation, name = 's/dense1',
-		kernel_regularizer=regularizers.l2(1e-3))(model_input)
-	net = Dense(100, activation=activation, name = 's/dense2',
-		kernel_regularizer=regularizers.l2(1e-3))(net) 
+    net = Dense(100, activation=activation, name = 's/dense1',
+        kernel_regularizer=regularizers.l2(1e-3))(model_input)
+    net = Dense(100, activation=activation, name = 's/dense2',
+        kernel_regularizer=regularizers.l2(1e-3))(net) 
 
-	# A tensor of shape, [batch_size, max_sents, 100]
-	logits = Dense(input_shape)(net) 
-	# [BATCH_SIZE, max_sents, 1]  
-	k = ks[datatype]; tau = 0.1
-	samples = Sample_Concrete(tau, k, name = 'sample')(logits)
+    # A tensor of shape, [batch_size, max_sents, 100]
+    logits = Dense(input_shape)(net) 
+    # [BATCH_SIZE, max_sents, 1]  
+    k = ks[datatype]; tau = 0.1
+    samples = Sample_Concrete(tau, k, name = 'sample')(logits)
 
-	# q(X_S) variational family
-	print (samples)
-	new_model_input = Multiply()([model_input, samples]) 
-	net = Dense(32, activation=activation, name = 'dense1',
-		kernel_regularizer=regularizers.l2(1e-3))(new_model_input) 
-	net = BatchNormalization()(net) # Add batchnorm for stability.
-	net = Dense(16, activation=activation, name = 'dense2',
-		kernel_regularizer=regularizers.l2(1e-3))(net)
-	net = BatchNormalization()(net)
+    # q(X_S) variational family
+    print (samples)
+    new_model_input = Multiply()([model_input, samples]) 
+    net = Dense(32, activation=activation, name = 'dense1',
+        kernel_regularizer=regularizers.l2(1e-3))(new_model_input) 
+    net = BatchNormalization()(net) # Add batchnorm for stability.
+    net = Dense(16, activation=activation, name = 'dense2',
+        kernel_regularizer=regularizers.l2(1e-3))(net)
+    net = BatchNormalization()(net)
 
-	preds = Dense(2, activation='softmax', name = 'dense4',
-		kernel_regularizer=regularizers.l2(1e-3))(net) 
-	model = Model(model_input, preds)
+    preds = Dense(1, activation='sigmoid', name = 'dense4',
+        kernel_regularizer=regularizers.l2(1e-3))(net) 
+    model = Model(model_input, preds)
 
-	if train: 
-		adam = optimizers.Adam(lr = 1e-3)
-		model.compile(loss='categorical_crossentropy',
-					  optimizer=adam,
-					  metrics=['acc']) 
-		filepath="models/{}/L2X.hdf5".format(datatype)
-		checkpoint = ModelCheckpoint(filepath, monitor='val_acc', 
-			verbose=1, save_best_only=True, mode='max')
-		callbacks_list = [checkpoint]
-		model.fit(x_train, y_train, validation_data=(x_val, y_val),callbacks = callbacks_list, epochs=1000, batch_size=BATCH_SIZE)
-		st2 = time.time() 
-	else:
-		model.load_weights('models/{}/L2X.hdf5'.format(datatype), 
-			by_name=True) 
+    if train: 
+        adam = optimizers.Adam(lr = 1e-3)
+        model.compile(loss='binary_crossentropy',
+                      optimizer=adam,
+                      metrics=['acc']) 
+        filepath="models/{}/L2X.hdf5".format(datatype)
+        checkpoint = ModelCheckpoint(filepath, monitor='val_acc', 
+            verbose=1, save_best_only=True, mode='max')
+        callbacks_list = [checkpoint]
+        model.fit(x_train, y_train, validation_data=(x_val, y_val),callbacks = callbacks_list, epochs=1000, batch_size=BATCH_SIZE)
+        st2 = time.time() 
+    else:
+        model.load_weights('models/{}/L2X.hdf5'.format(datatype), 
+            by_name=True) 
 
 
-	pred_model = Model(model_input, samples)
-	pred_model.compile(loss=None,
-				  optimizer='rmsprop',
-				  metrics=[None]) 
+    pred_model = Model(model_input, samples)
+    pred_model.compile(loss=None,
+                  optimizer='rmsprop',
+                  metrics=[None]) 
 
-	scores = pred_model.predict(x_val, verbose = 1, batch_size = BATCH_SIZE) 
+    scores = pred_model.predict(x_val, verbose = 1, batch_size = BATCH_SIZE) 
 
-	median_ranks = compute_median_rank(scores, k = ks[datatype],
-		datatype_val=datatype_val)
-	
+    median_ranks = compute_median_rank(scores, k = ks[datatype],
+        datatype_val=datatype_val)
+    
 
-	return median_ranks, time.time() - st2, st2 - st1, scores,x_val,y_val
+    return median_ranks, time.time() - st2, st2 - st1, scores,x_val,y_val
 
 
 if __name__ == '__main__':
-	import argparse
-	parser = argparse.ArgumentParser()
+    import argparse
+    parser = argparse.ArgumentParser()
 
-	parser.add_argument('--datatype', type = str, 
-		choices = ['RNA'], default = 'RNA')
-	parser.add_argument('--train', action='store_true')
+    parser.add_argument('--datatype', type = str, 
+        choices = ['RNA'], default = 'RNA')
+    parser.add_argument('--train', action='store_true')
 
-	args = parser.parse_args()
+    args = parser.parse_args()
 
-	median_ranks, exp_time, train_time,scores,x_val,y_val = L2X(datatype = args.datatype, 
-		train = args.train)
-	output = 'datatype:{}, mean:{}, sd:{}, train time:{}s, explain time:{}s \n'.format( 
-		args.datatype, 
-		np.mean(median_ranks), 
-		np.std(median_ranks),
-		train_time, exp_time)
-	print (scores)
-	pickle.dump(scores, open("./score.pkl", "wb"))
-	pickle.dump(x_val, open("./x_val.pkl", "wb"))
-	pickle.dump(y_val, open("./y_val.pkl", "wb"))
+    median_ranks, exp_time, train_time,scores,x_val,y_val = L2X(datatype = args.datatype, 
+        train = args.train)
+    output = 'datatype:{}, mean:{}, sd:{}, train time:{}s, explain time:{}s \n'.format( 
+        args.datatype, 
+        np.mean(median_ranks), 
+        np.std(median_ranks),
+        train_time, exp_time)
+    print (scores)
+    #pickle.dump(scores, open("./score.pkl", "wb"))
+    #pickle.dump(x_val, open("./x_val.pkl", "wb"))
+    #pickle.dump(y_val, open("./y_val.pkl", "wb"))
 
-	print(output)
+    print(output)
  
