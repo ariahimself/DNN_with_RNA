@@ -131,8 +131,8 @@ class Sample_Concrete(Layer):
 			samples_list.append(samples)
 			discrete_logits_list.append(discrete_logits)
 		
-		final_samples = K.concat(samples_list, 1)
-		final_discrete_logits = K.concat(discrete_logits, 1)
+		final_samples = tf.concat(samples_list, 1)
+		final_discrete_logits = tf.concat(discrete_logits, 1)
 		return K.in_train_phase(final_samples, final_discrete_logits)
 
 	def compute_output_shape(self, input_shape):
