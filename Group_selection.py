@@ -33,32 +33,32 @@ random.seed(0)
 ks = {'RNA' : 1}
 
 def create_data(datatype, n = 1000): 
-        dir_res = "Results200/"
+	dir_res = "Results200/"
 
 
-        y_train = pickle.load(open(dir_res+"training_data.pkl", "rb"))
-        x_train = pickle.load(open(dir_res+"y_ns_training.pkl", "rb"))
-        y_val = pickle.load(open(dir_res+"test_data.pkl", "rb"))
-        x_val = pickle.load(open(dir_res+"y_ns_test.pkl", "rb"))
+	y_train = pickle.load(open(dir_res+"training_data.pkl", "rb"))
+	x_train = pickle.load(open(dir_res+"y_ns_training.pkl", "rb"))
+	y_val = pickle.load(open(dir_res+"test_data.pkl", "rb"))
+	x_val = pickle.load(open(dir_res+"y_ns_test.pkl", "rb"))
 
     
 
-        y_val = y_val
-        y_train = y_train
+	y_val = y_val
+	y_train = y_train
 
 
-        mean = x_train.mean(axis=0)
+	mean = x_train.mean(axis=0)
 
-        std = x_train.std(axis=0)
-        x_train -= mean
-        x_train /= std
-        x_val -= mean
-        x_val /= std
-        datatypes_val = None
+	std = x_train.std(axis=0)
+	x_train -= mean
+	x_train /= std
+	x_val -= mean
+	x_val /= std
+	datatypes_val = None
 
-        input_shape = x_train.shape[1]
+	input_shape = x_train.shape[1]
 
-        return x_train,y_train,x_val,y_val,datatypes_val,input_shape
+	return x_train,y_train,x_val,y_val,datatypes_val,input_shape
 
     
 def create_rank(scores, k): 
@@ -108,10 +108,11 @@ class Sample_Concrete(Layer):
 		logits_ = K.expand_dims(logits, -2)# [BATCH_SIZE, 1, d]
 		batch_size = tf.shape(logits_)[0]
 		d = tf.shape(logits_)[2]
+		d_ = logits_.shape[2]
 		K_c = self.K_c
 		samples_list = []
 		discrete_logits_list = []
-		for i in range(d/self.K_c):
+		for i in range(d_/self.K_c):
 			sub_logits = logits_[:,:,i*K_c:(i+1)*K_c]
 
 			uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
@@ -140,7 +141,7 @@ class Sample_Concrete(Layer):
 
 
 def L2X(datatype, train = True):
-        # the whole thing is equation (5)
+	# the whole thing is equation (5)
 	x_train,y_train,x_val,y_val,datatype_val, input_shape = create_data(datatype, 
 		n = int(1e6))
 	 
@@ -158,16 +159,16 @@ def L2X(datatype, train = True):
 
 	# A tensor of shape, [batch_size, max_sents, 100]
 
-        
+	
 
-    mid_dim = input_shape * K_c
-        
+	mid_dim = input_shape * K_c
+	
 
 	logits = Dense(mid_dim)(net) 
 	# [BATCH_SIZE, max_sents, 1]  
 	k = ks[datatype]; tau = 0.1
 
-        #
+	#
 
 	
 	samples = Sample_Concrete(tau, k, K_c, name = 'sample')(logits)
@@ -175,7 +176,7 @@ def L2X(datatype, train = True):
 	samples = Reshape(K_c, input_shape)(samples)
 
 
-        #samples to be KD *1 and then make a matrix K*D and the K*D * D * 1 = K * 1 the new_model_input
+	#samples to be KD *1 and then make a matrix K*D and the K*D * D * 1 = K * 1 the new_model_input
 	#   1) one nueral net that gives
 	#   2) seperate neural net with one node as input. 
 
