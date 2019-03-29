@@ -173,7 +173,7 @@ def L2X(datatype, train = True):
 	
 	samples = Sample_Concrete(tau, k, input_shape, K_c, name = 'sample')(logits)
 
-	samples = Reshape(K_c, input_shape)(samples)
+	samples = Reshape((K_c, input_shape))(samples)
 
 
 	#samples to be KD *1 and then make a matrix K*D and the K*D * D * 1 = K * 1 the new_model_input
