@@ -10,7 +10,7 @@ import sys
 import os
 import time
 from keras.callbacks import ModelCheckpoint    
-from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda
+from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model, Sequential
 from keras import regularizers
@@ -97,33 +97,42 @@ class Sample_Concrete(Layer):
 	"""
 	Layer for sample Concrete / Gumbel-Softmax variables. 
 	"""
-	def __init__(self, tau0, k, **kwargs): 
+	def __init__(self, tau0, k, K_c, **kwargs): 
 		self.tau0 = tau0
 		self.k = k
+		self.K_c = K_c
 		super(Sample_Concrete, self).__init__(**kwargs)
 
-	def call(self, logits):
-
-                
+	def call(self, logits):      
 		# logits: [BATCH_SIZE, d]
 		logits_ = K.expand_dims(logits, -2)# [BATCH_SIZE, 1, d]
-
 		batch_size = tf.shape(logits_)[0]
 		d = tf.shape(logits_)[2]
-		uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
-			minval = np.finfo(tf.float32.as_numpy_dtype).tiny,
-			maxval = 1.0)
+		K_c = self.K_c
+		samples_list = []
+		discrete_logits_list = []
+		for i in range(d/self.K_c):
+			sub_logits = logits_[:,:,i*K_c:(i+1)*K_c]
 
-		gumbel = - K.log(-K.log(uniform))
-		noisy_logits = (gumbel + logits_)/self.tau0
-		samples = K.softmax(noisy_logits)
-		samples = K.max(samples, axis = 1) 
+			uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
+				minval = np.finfo(tf.float32.as_numpy_dtype).tiny,
+				maxval = 1.0)
 
-		# Explanation Stage output.
-		threshold = tf.expand_dims(tf.nn.top_k(logits, self.k, sorted = True)[0][:,-1], -1)
-		discrete_logits = tf.cast(tf.greater_equal(logits,threshold),tf.float32)
+			gumbel = - K.log(-K.log(uniform))
+			noisy_logits = (gumbel + sub_logits)/self.tau0
+			samples = K.softmax(noisy_logits)
+			samples = K.max(samples, axis = 1) 
+
+			# Explanation Stage output.
+			threshold = tf.expand_dims(tf.nn.top_k(logits[:,i*K_c:(i+1)*K_c], self.k, sorted = True)[0][:,-1], -1)
+			discrete_logits = tf.cast(tf.greater_equal(logits[:,i*K_c:(i+1)*K_c],threshold),tf.float32)
+
+			samples_list.append(samples)
+			discrete_logits_list.append(discrete_logits)
 		
-		return K.in_train_phase(samples, discrete_logits)
+		final_samples = K.concat(samples_list, 1)
+		final_discrete_logits = K.concat(discrete_logits, 1)
+		return K.in_train_phase(final_samples, final_discrete_logits)
 
 	def compute_output_shape(self, input_shape):
 		return input_shape 
@@ -151,7 +160,7 @@ def L2X(datatype, train = True):
 
         
 
-        mid_dim = input_shape * K_c
+    mid_dim = input_shape * K_c
         
 
 	logits = Dense(mid_dim)(net) 
@@ -161,7 +170,9 @@ def L2X(datatype, train = True):
         #
 
 	
-	samples = Sample_Concrete(tau, k, name = 'sample')(logits)
+	samples = Sample_Concrete(tau, k, K_c, name = 'sample')(logits)
+
+	samples = Reshape(K_c, input_shape)(samples)
 
 
         #samples to be KD *1 and then make a matrix K*D and the K*D * D * 1 = K * 1 the new_model_input
@@ -170,7 +181,8 @@ def L2X(datatype, train = True):
 
 	# q(X_S) variational family
 	print (samples)
-	new_model_input = Multiply()([model_input, samples]) 
+	# new_model_input = Multiply()([model_input, samples])
+	new_model_input =  K.dot(samples, model_input)
 	net = Dense(32, activation=activation, name = 'dense1',
 		kernel_regularizer=regularizers.l2(1e-3))(new_model_input) 
 	net = BatchNormalization()(net) # Add batchnorm for stability.
