@@ -97,10 +97,11 @@ class Sample_Concrete(Layer):
 	"""
 	Layer for sample Concrete / Gumbel-Softmax variables. 
 	"""
-	def __init__(self, tau0, k, K_c, **kwargs): 
+	def __init__(self, tau0, k, input_shape, K_c, **kwargs): 
 		self.tau0 = tau0
 		self.k = k
 		self.K_c = K_c
+		self.input_shape = input_shape
 		super(Sample_Concrete, self).__init__(**kwargs)
 
 	def call(self, logits):      
@@ -108,11 +109,10 @@ class Sample_Concrete(Layer):
 		logits_ = K.expand_dims(logits, -2)# [BATCH_SIZE, 1, d]
 		batch_size = tf.shape(logits_)[0]
 		d = tf.shape(logits_)[2]
-		d_ = logits_.shape[2]
 		K_c = self.K_c
 		samples_list = []
 		discrete_logits_list = []
-		for i in range(d_/self.K_c):
+		for i in range(self.input_shape):
 			sub_logits = logits_[:,:,i*K_c:(i+1)*K_c]
 
 			uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
@@ -171,7 +171,7 @@ def L2X(datatype, train = True):
 	#
 
 	
-	samples = Sample_Concrete(tau, k, K_c, name = 'sample')(logits)
+	samples = Sample_Concrete(tau, k, input_shape, K_c, name = 'sample')(logits)
 
 	samples = Reshape(K_c, input_shape)(samples)
 
