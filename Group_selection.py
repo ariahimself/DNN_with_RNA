@@ -10,7 +10,7 @@ import sys
 import os
 import time
 from keras.callbacks import ModelCheckpoint    
-from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape
+from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape, Dot
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model, Sequential
 from keras import regularizers
@@ -183,7 +183,16 @@ def L2X(datatype, train = True):
 	# q(X_S) variational family
 	print (samples)
 	# new_model_input = Multiply()([model_input, samples])
-	new_model_input =  K.dot(samples, model_input)
+	# new_model_input =  Dot(samples, model_input)
+	def matmul_output_shape(input_shapes):
+	    shape1 = list(input_shapes[0])
+	    print("shape1", shape1)
+	    shape2 = list(input_shapes[1])
+	    print("shape2", shape2)
+	    return tuple(shape1[2], shape2[1])
+	matmul_layer = Lambda(lambda x: K.batch_dot(x[0], x[1]), output_shape=matmul_output_shape)
+	new_model_input = matmul_layer([samples, model_input])
+
 	net = Dense(32, activation=activation, name = 'dense1',
 		kernel_regularizer=regularizers.l2(1e-3))(new_model_input) 
 	net = BatchNormalization()(net) # Add batchnorm for stability.
