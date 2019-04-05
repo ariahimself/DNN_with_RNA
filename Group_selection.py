@@ -27,7 +27,7 @@ from tensorflow.python import debug as tf_debug
 
 
 # No of Groups
-num_groups = 4
+num_groups = 2
 
 BATCH_SIZE = 256
 np.random.seed(0)
@@ -116,10 +116,13 @@ class Sample_Concrete(Layer):
 		num_groups = self.num_groups
 		samples_list = []
 		discrete_logits_list = []
-		for i in range(num_groups):
-			sub_logits = logits_[:,:,i*num_feature:(i+1)*num_feature]
+		for i in range(num_feature):
+			#sub_logits = logits_[:,:,i*num_feature:(i+1)*num_feature]
 
-			uniform = tf.random_uniform(shape =(batch_size, self.k, num_feature),
+			sub_logits = logits_[:,:,i*num_groups:(i+1)*num_groups]			
+
+
+			uniform = tf.random_uniform(shape =(batch_size, self.k, num_groups),
 				minval = np.finfo(tf.float32.as_numpy_dtype).tiny,
 				maxval = 1.0)
 
@@ -129,14 +132,16 @@ class Sample_Concrete(Layer):
 			samples = K.max(samples, axis = 1)
 
 			# Explanation Stage output.
-			threshold = tf.expand_dims(tf.nn.top_k(logits[:,i*num_feature:(i+1)*num_feature], self.k, sorted = True)[0][:,-1], -1)
-			discrete_logits = tf.cast(tf.greater_equal(logits[:,i*num_feature:(i+1)*num_feature],threshold),tf.float32)
+			threshold = tf.expand_dims(tf.nn.top_k(logits[:,i*num_groups:(i+1)*num_groups], self.k, sorted = True)[0][:,-1], -1)
+			discrete_logits = tf.cast(tf.greater_equal(logits[:,i*num_groups:(i+1)*num_groups],threshold),tf.float32)
 
 			samples_list.append(samples)
 			discrete_logits_list.append(discrete_logits)
 
 		final_samples = tf.concat(samples_list, 1)
 		final_discrete_logits = tf.concat(discrete_logits_list, 1)
+
+
 		return K.in_train_phase(final_samples, final_discrete_logits)
 
 	def compute_output_shape(self, input_shape):
@@ -188,7 +193,7 @@ def L2X(datatype, train = True):
 	    shape1 = list(input_shapes[0])
 	    shape2 = list(input_shapes[1])
 	    return tuple((shape1[0], shape1[1]))
-
+    
 	matmul_layer = Lambda(lambda x: K.batch_dot(x[0], x[1]), output_shape=matmul_output_shape)
 	new_model_input = matmul_layer([samples, model_input])
 	print('heihei', new_model_input.shape)
@@ -229,6 +234,7 @@ def L2X(datatype, train = True):
 	
 	scores = pred_model.predict(x_val, verbose = 1, batch_size = BATCH_SIZE)
 
+
 	# We need to write a new compute_median_rank to do analysis
 	# median_ranks = compute_median_rank(scores, k = ks[datatype],
 	#		datatype_val=datatype_val)
@@ -258,8 +264,8 @@ if __name__ == '__main__':
 		0, #np.std(median_ranks),
 		train_time, exp_time)
 	print (scores)
-	#pickle.dump(scores, open("./score.pkl", "wb"))
-	#pickle.dump(x_val, open("./x_val.pkl", "wb"))
-	#pickle.dump(y_val, open("./y_val.pkl", "wb"))
+	pickle.dump(scores, open("./score.pkl", "wb"))
+	pickle.dump(x_val, open("./x_val.pkl", "wb"))
+	pickle.dump(y_val, open("./y_val.pkl", "wb"))
 
 	print(output)
