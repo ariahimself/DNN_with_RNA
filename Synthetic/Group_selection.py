@@ -10,7 +10,7 @@ import sys
 import os
 import time
 from keras.callbacks import ModelCheckpoint
-from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape, Dot
+from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape, Dot, Permute
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model, Sequential
 from keras import regularizers
@@ -27,7 +27,7 @@ from tensorflow.python import debug as tf_debug
 from make_data import generate_data
 
 # No of Groups
-num_groups = 4
+num_groups = 6
 
 BATCH_SIZE = 256
 np.random.seed(0)
@@ -37,9 +37,6 @@ random.seed(0)
 ks = {'orange_skin': 1, 'XOR': 1, 'nonlinear_additive': 1, 'switch': 1}
 
 def create_data(datatype, n = 1000):
-
-
-
 
 	x_train, y_train, _ = generate_data(n = n, 
 		datatype = datatype, seed = 0)  
@@ -171,7 +168,9 @@ def L2X(datatype, train = True):
 
 	samples = Sample_Concrete(tau, k, input_shape, num_groups, name = 'sample')(logits)
 
-	samples = Reshape((num_groups, input_shape))(samples)
+	# samples = Reshape((num_groups, input_shape))(samples)
+	samples = Reshape((input_shape, num_groups))(samples)
+	samples = Permute((2, 1))(samples)
 
 
 	#samples to be KD *1 and then make a matrix K*D and the K*D * D * 1 = K * 1 the new_model_input
