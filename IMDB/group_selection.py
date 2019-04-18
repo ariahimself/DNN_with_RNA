@@ -26,7 +26,8 @@ import os
 #except:
 import pickle
 import os 
-from utils import create_dataset_from_score, calculate_acc
+from utils import create_dataset_from_score, calculate_acc, get_selected_words_group, create_dataset_from_group_score
+
 
 
 # Set parameters:
@@ -34,13 +35,13 @@ tf.set_random_seed(10086)
 np.random.seed(10086)
 max_features = 5000
 maxlen = 400
-num_groups = 5
+num_groups = 10
 batch_size = 40
 embedding_dims = 50
 filters = 250
 kernel_size = 3
 hidden_dims = 250
-epochs = 5
+epochs = 1
 k =1 # Number of selected words by L2X.
 PART_SIZE = 125
 
@@ -370,21 +371,22 @@ def L2X(train = True):
         model.fit(x_train, pred_train, 
             validation_data=(x_val, pred_val), 
             callbacks = callbacks_list,
-            epochs=5, batch_size=batch_size)
+            epochs=epochs, batch_size=batch_size)
         duration = time.time() - st
         print('Training time is {}'.format(duration))       
 
     model.load_weights('models/l2x.hdf5', by_name=True) 
 
-    pred_model = Model(X_ph, logits_T_grp) 
+    pred_model = Model(X_ph, T) 
     pred_model.summary()
     pred_model.compile(loss='categorical_crossentropy', 
         optimizer='adam', metrics=['acc']) 
 
     st = time.time()
-    scores = pred_model.predict(x_val, 
-        verbose = 1, batch_size = batch_size)[:,:,0] 
-    scores = np.reshape(scores, [scores.shape[0], maxlen])
+    #scores = pred_model.predict(x_val, 
+    #    verbose = 1, batch_size = batch_size)[:,:,0] 
+    #scores = np.reshape(scores, [scores.shape[0], maxlen])
+    scores = pred_model.predict(x_val, verbose = 1, batch_size = batch_size)
     return scores, x_val 
 
 if __name__ == '__main__':
@@ -404,7 +406,14 @@ if __name__ == '__main__':
 
     elif args.task == 'L2X':
         scores, x = L2X(args.train)
+        print(scores.shape) # batchs, num_groups, max_len
+        print(scores[0])
         print('Creating dataset with selected sentences...')
+        explain_list = create_dataset_from_group_score(x, scores, filtered=True)
+        print(explain_list[0])
+        print(explain_list[1])
+        with open('./data/explain_list.pkl', 'wb') as f:
+            pickle.dump(explain_list, f)
         # TODO: save scores and do analysis
         # create_dataset_from_score(x, scores, k)
 
