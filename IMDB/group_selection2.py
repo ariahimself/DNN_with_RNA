@@ -11,6 +11,7 @@ from keras.preprocessing import sequence
 from keras.datasets import imdb
 from keras.callbacks import ModelCheckpoint
 from keras.models import Model, Sequential 
+from keras import regularizers
 
 import numpy as np
 import tensorflow as tf 
@@ -35,7 +36,7 @@ tf.set_random_seed(10086)
 np.random.seed(10086)
 max_features = 5000
 maxlen = 100
-num_groups = 3
+num_groups = 10
 batch_size = 40
 embedding_dims = 50
 filters = 250
@@ -43,6 +44,7 @@ kernel_size = 3
 hidden_dims = 250
 epochs = 3
 k =1 # Number of selected words by L2X.
+num_vital_group = 5
 PART_SIZE = 125
 
 ###########################################
@@ -61,7 +63,7 @@ def load_data():
         
     if 'id_to_word.pkl' not in os.listdir('data'):
         print('Loading data...')
-        (x_train, y_train), (x_val, y_val) = imdb.load_data(num_words=max_features, skip_top=100, index_from=3)
+        (x_train, y_train), (x_val, y_val) = imdb.load_data(num_words=max_features, skip_top=20, index_from=3)
         word_to_id = imdb.get_word_index()
         word_to_id ={k:(v+3) for k,v in word_to_id.items()}
         word_to_id["<PAD>"] = 0
@@ -169,8 +171,11 @@ def matmul_output_shape(input_shapes):
         shape1 = list(input_shapes[0])
         shape2 = list(input_shapes[1])
         return tuple((shape1[0], shape1[1], shape2[2]))
+
+
     
 matmul_layer = Lambda(lambda x: K.batch_dot(x[0], x[1]), output_shape=matmul_output_shape)
+
 
 class Concatenate(Layer):
     """
@@ -194,39 +199,36 @@ class Concatenate(Layer):
         input_shape[-2] = int(input_shape[-2])
         return tuple(input_shape)
 
-'''class Sample_Concrete(Layer):
+class Sample_Concrete_Original(Layer):
     """
     Layer for sample Concrete / Gumbel-Softmax variables. 
-
     """
     def __init__(self, tau0, k, **kwargs): 
         self.tau0 = tau0
         self.k = k
-        super(Sample_Concrete, self).__init__(**kwargs)
+        super(Sample_Concrete_Original, self).__init__(**kwargs)
 
     def call(self, logits):   
-        # logits: [batch_size, d, 1]
-        logits_ = K.permute_dimensions(logits, (0,2,1))# [batch_size, 1, d]
+        # logits: [BATCH_SIZE, d]
+        logits_ = K.expand_dims(logits, -2)# [BATCH_SIZE, 1, d]
 
-        d = int(logits_.get_shape()[2])
-        unif_shape = [batch_size,self.k,d]
+        batch_size = tf.shape(logits_)[0]
+        d = tf.shape(logits_)[2]
+        uniform = tf.random_uniform(shape =(batch_size, self.k, d), 
+            minval = np.finfo(tf.float32.as_numpy_dtype).tiny,
+            maxval = 1.0)
 
-        uniform = K.random_uniform_variable(shape=unif_shape,
-            low = np.finfo(tf.float32.as_numpy_dtype).tiny,
-            high = 1.0)
         gumbel = - K.log(-K.log(uniform))
         noisy_logits = (gumbel + logits_)/self.tau0
         samples = K.softmax(noisy_logits)
         samples = K.max(samples, axis = 1) 
-        logits = tf.reshape(logits,[-1, d]) 
+
+        # Explanation Stage output.
         threshold = tf.expand_dims(tf.nn.top_k(logits, self.k, sorted = True)[0][:,-1], -1)
         discrete_logits = tf.cast(tf.greater_equal(logits,threshold),tf.float32)
         
-        output = K.in_train_phase(samples, discrete_logits) 
-        return tf.expand_dims(output,-1)
+        return K.in_train_phase(samples, discrete_logits)
 
-    def compute_output_shape(self, input_shape):
-        return input_shape'''
 class Sample_Concrete(Layer):
     """
     Layer for sample Concrete / Gumbel-Softmax variables.
@@ -342,13 +344,29 @@ def L2X(train = True):
         # apply the matrix trick as before
         # here the output size of matmul layer is different from before
         net = matmul_layer([T, emb2]) # bs, num_groups, 50
-        print(net.shape)
-
+        #print(net.shape)
+        net = Conv1D(1, 1, padding='same', activation=None, strides=1, name = 'merge_channel')(net)  # bs, num_groups, 1
 
         # net = Mean(net) # bs, 50
-        net = Flatten()(net)
-        net = Dense(hidden_dims)(net)
-        net = Activation('relu')(net) 
+        input_group = Flatten()(net) # bs, num_groups
+        # num_groups = K.int_shape(input_group)[1]
+        # here we add instance wise f-s again!!!!
+        net = Dense(100, activation='relu', name = 's/dense1',
+        kernel_regularizer=regularizers.l2(1e-3))(input_group)
+        net = Dense(100, activation='relu', name = 's/dense2',
+        kernel_regularizer=regularizers.l2(1e-3))(net)
+        logits = Dense(num_groups)(net)
+
+
+
+
+    # A tensor of shape, [batch_size, max_sents, 100]
+        samples = Sample_Concrete_Original(tau, num_vital_group, name='group_importance')(logits)
+        new_input_group = Multiply()([input_group, samples]) 
+
+
+
+        net = Dense(hidden_dims, activation='relu')(new_input_group)
         preds = Dense(2, activation='softmax', 
             name = 'new_dense')(net)
 
@@ -378,7 +396,7 @@ def L2X(train = True):
 
     model.load_weights('models/l2x.hdf5', by_name=True) 
 
-    pred_model = Model(X_ph, T) 
+    pred_model = Model(X_ph, [T, samples]) 
     pred_model.summary()
     pred_model.compile(loss='categorical_crossentropy', 
         optimizer='adam', metrics=['acc']) 
@@ -387,8 +405,8 @@ def L2X(train = True):
     #scores = pred_model.predict(x_val, 
     #    verbose = 1, batch_size = batch_size)[:,:,0] 
     #scores = np.reshape(scores, [scores.shape[0], maxlen])
-    scores = pred_model.predict(x_val, verbose = 1, batch_size = batch_size)
-    return scores, x_val 
+    scores, group_importances = pred_model.predict(x_val, verbose = 1, batch_size = batch_size)
+    return scores, group_importances, x_val 
 
 if __name__ == '__main__':
     import argparse
@@ -406,15 +424,20 @@ if __name__ == '__main__':
         generate_original_preds(args.train) 
 
     elif args.task == 'L2X':
-        scores, x = L2X(args.train)
+        scores, group_importances, x = L2X(args.train)
         print(scores.shape) # batchs, num_groups, max_len
-        print(scores[0])
         print('Creating dataset with selected sentences...')
         explain_list = create_dataset_from_group_score(x, scores, filtered=True)
+        print("For 1st sentence")
+        print(group_importances[0])
         print(explain_list[0])
+        print("For 2nd sentence")
+        print(group_importances[1])
         print(explain_list[1])
         with open('./data/explain_list.pkl', 'wb') as f:
             pickle.dump(explain_list, f)
+        with open('./data/grp_importance.pkl', 'wb') as f:
+            pickle.dump(group_importances, f)
         # TODO: save scores and do analysis
         # create_dataset_from_score(x, scores, k)
 
