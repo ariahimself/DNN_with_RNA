@@ -349,6 +349,11 @@ def L2X(train = True):
 
         # net = Mean(net) # bs, 50
         input_group = Flatten()(net) # bs, num_groups
+        net2 = Dense(hidden_dims, activation='relu')(input_group)
+        preds2 = Dense(2, activation='softmax', 
+            name = 'intermediate_supervision')(net2)
+
+
         # num_groups = K.int_shape(input_group)[1]
         # here we add instance wise f-s again!!!!
         net = Dense(100, activation='relu', name = 's/dense1',
@@ -357,14 +362,9 @@ def L2X(train = True):
         kernel_regularizer=regularizers.l2(1e-3))(net)
         logits = Dense(num_groups)(net)
 
-
-
-
     # A tensor of shape, [batch_size, max_sents, 100]
         samples = Sample_Concrete_Original(tau, num_vital_group, name='group_importance')(logits)
         new_input_group = Multiply()([input_group, samples]) 
-
-
 
         net = Dense(hidden_dims, activation='relu')(new_input_group)
         preds = Dense(2, activation='softmax', 
@@ -372,9 +372,11 @@ def L2X(train = True):
 
 
     model = Model(inputs=X_ph, 
-        outputs=preds)
+        outputs=[preds, preds2])
     model.summary()
-    model.compile(loss='categorical_crossentropy',
+    l1, l2 = 1.0, 1.0
+    model.compile(loss=['categorical_crossentropy', 'categorical_crossentropy'],
+                  loss_weights = [l1,l2],
                   optimizer='rmsprop',#optimizer,
                   metrics=['acc']) 
     #train_acc = np.mean(np.argmax(pred_train, axis = 1)==np.argmax(y_train, axis = 1))
@@ -382,19 +384,19 @@ def L2X(train = True):
     #print('The train and validation accuracy of the original model is {} and {}'.format(train_acc, val_acc))
 
     if train:
-        filepath="models/l2x.hdf5"
-        checkpoint = ModelCheckpoint(filepath, monitor='val_acc', 
+        filepath="./models/l2x_2_loss.hdf5"
+        checkpoint = ModelCheckpoint(filepath, monitor='val_new_dense_acc', 
             verbose=1, save_best_only=True, mode='max')
         callbacks_list = [checkpoint] 
         st = time.time()
-        model.fit(x_train, y_train, 
-            validation_data=(x_val, y_val), 
+        model.fit(x_train, [y_train, y_train], 
+            validation_data=(x_val, [y_val, y_val]), 
             callbacks = callbacks_list,
             epochs=epochs, batch_size=batch_size)
         duration = time.time() - st
         print('Training time is {}'.format(duration))       
 
-    model.load_weights('models/l2x.hdf5', by_name=True) 
+    model.load_weights('./models/l2x_2_loss.hdf5', by_name=True) 
 
     pred_model = Model(X_ph, [T, samples]) 
     pred_model.summary()
@@ -427,19 +429,19 @@ def generate_post_preds(train = True):
     The original model is also trained if train = True. 
 
     """
-    x_train, y_train, x_val, y_val = np.load('data/x_train_new.npy'),np.load('data/y_train.npy'),np.load('data/x_val_new.npy'),np.load('data/y_val.npy')
+    x_train, y_train, x_val, y_val = np.load('data/x_train_new_2_loss.npy'),np.load('data/y_train.npy'),np.load('data/x_val_new_2_loss.npy'),np.load('data/y_val.npy')
     with open('data/id_to_word.pkl','rb') as f:
         id_to_word = pickle.load(f) 
     model = create_original_model()
 
     if train:
-        filepath="./models/post.hdf5"
+        filepath="./models/post_2_loss.hdf5"
         checkpoint = ModelCheckpoint(filepath, monitor='val_acc', 
             verbose=1, save_best_only=True, mode='max')
         callbacks_list = [checkpoint]
         model.fit(x_train, y_train, validation_data=(x_val, y_val),callbacks = callbacks_list, epochs=epochs, batch_size=batch_size)
 
-    model.load_weights('./models/post.hdf5', 
+    model.load_weights('./models/post_2_loss.hdf5', 
         by_name=True) 
 
     pred_train = model.predict(x_train,verbose = 1, batch_size = 1000)
@@ -477,13 +479,13 @@ if __name__ == '__main__':
         print("For 2nd sentence")
         print(group_importances_v[1])
         print(explain_list_v[1])
-        with open('./data/explain_list_v.pkl', 'wb') as f:
+        with open('./data/explain_list_v_2_loss.pkl', 'wb') as f:
             pickle.dump(explain_list_v, f)
-        with open('./data/grp_importance_v.pkl', 'wb') as f:
+        with open('./data/grp_importance_v_2_loss.pkl', 'wb') as f:
             pickle.dump(group_importances_v, f)
-        with open('./data/explain_list_t.pkl', 'wb') as f:
+        with open('./data/explain_list_t_2_loss.pkl', 'wb') as f:
             pickle.dump(explain_list_t, f)
-        with open('./data/grp_importance_t.pkl', 'wb') as f:
+        with open('./data/grp_importance_t_2_loss.pkl', 'wb') as f:
             pickle.dump(group_importances_t, f)
 
         print(x_train.shape)
@@ -492,8 +494,8 @@ if __name__ == '__main__':
         for i in range(x_val.shape[0]):
             x_val[i, :] = get_important_X(x_val[i], scores_v[i], group_importances_v[i])
 
-        np.save('./data/x_train_new.npy', x_train)
-        np.save('./data/x_val_new.npy', x_val)
+        np.save('./data/x_train_new_2_loss.npy', x_train)
+        np.save('./data/x_val_new_2_loss.npy', x_val)
     
     elif args.task == 'post':
         generate_post_preds(args.train)
