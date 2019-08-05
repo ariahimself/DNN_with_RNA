@@ -184,7 +184,8 @@ def L2X(datatype, train = True):
 	net_list = []
 	for i in range(num_groups):
 		temp = Lambda(lambda x: x[:, i, :], output_shape=lambda in_shape:(in_shape[0], in_shape[2]))(samples)
-		net_list.append(Dense(1, activation=activation, name='s/dense3'+str(i), kernel_regularizer=regularizers.l2(1e-3))(temp))
+		new_temp = Multiply()([model_input, temp])
+		net_list.append(Dense(1, activation=activation, name='s/dense3'+str(i), kernel_regularizer=regularizers.l2(1e-3))(new_temp))
 	# here are altogether are num_groups features
 	# we need to merge them
 	new_model_input = Concatenate(axis=-1)(net_list)
