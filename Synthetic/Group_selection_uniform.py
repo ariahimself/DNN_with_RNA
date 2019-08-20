@@ -10,7 +10,7 @@ import sys
 import os
 import time
 from keras.callbacks import ModelCheckpoint
-from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape, Dot, Permute, Concatenate
+from keras.layers import Dense, Input, Flatten, Add, Multiply, Lambda, Reshape, Dot, Permute, Concatenate, RepeatVector
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model, Sequential
 from keras import regularizers
@@ -40,7 +40,7 @@ def create_data(datatype, n = 1000):
 
 	x_train, y_train, _ = generate_data(n = n, 
 		datatype = datatype, seed = 0)  
-	x_val, y_val, datatypes_val = generate_data(n = 14, 
+	x_val, y_val, datatypes_val = generate_data(n = 10, 
 		datatype = datatype, seed = 1)  
 
 	input_shape = x_train.shape[1] 
@@ -233,16 +233,27 @@ def L2X(datatype, train = True):
 		out_temp = Sample_Concrete_Original(tau1 ,k=1, name = 'Super_feature_selection1'+str(i))(temp)
 		debug_class.append(out_temp)
 		#new_temp = Multiply()([model_input, out_temp])
-		x =Dot(axes=1,normalize=False)([model_input, out_temp])
-		net_list.append(Dot(axes=1,normalize=False)([model_input, out_temp]))
+
+
+		x1 =Dot(axes=1,normalize=False)([model_input, out_temp])
+
+		xd = RepeatVector(input_shape)(x1)
+		xd = Reshape((input_shape,))(xd)
+
+		
+
+		new_temp = Multiply()([xd, temp])
+
+		net_list.append(new_temp)
 		#net_list.append(Dense(1, activation='linear', name='s/dense3'+str(i), kernel_regularizer=regularizers.l2(1e-3))(new_temp))
 		#net_list.append(Dense(1,  activation=None,use_bias=True,kernel_initializer='glorot_uniform',bias_initializer='zeros',
 		# kernel_regularizer=None,bias_regularizer=None, activity_regularizer=None,kernel_constraint=None,bias_constraint=None,
 		# name='s/dense3'+str(i))(new_temp))
 	# here are altogether are num_groups features
 	# we need to merge them
-	new_model_input = Concatenate(axis=-1)(net_list)
 
+	#new_model_input = Concatenate(axis=-1)(net_list)
+	new_model_input = Add()(net_list)
 
 	'''def matmul_output_shape(input_shapes):
 	    shape1 = list(input_shapes[0])
@@ -275,15 +286,15 @@ def L2X(datatype, train = True):
 		checkpoint = ModelCheckpoint(filepath, monitor='val_acc',
 			verbose=1, save_best_only=True, mode='max')
 		callbacks_list = [checkpoint]
-		model.fit(x_train, y_train, validation_data=(x_val, y_val),callbacks = callbacks_list, epochs=1, batch_size=100)
+		model.fit(x_train, y_train, validation_data=(x_val, y_val),callbacks = callbacks_list, epochs=1, batch_size=BATCH_SIZE)
 		st2 = time.time()
 	else:
 		model.load_weights('models/{}/L2X.hdf5'.format(datatype),
 			by_name=True)
 
 
-	#pred_model = Model(model_input, samples)
-	pred_model = Model(model_input,debug_class)
+	pred_model = Model(model_input, samples)
+	#pred_model = Model(model_input,debug_class)
 
 	pred_model.compile(loss=None,
 				  optimizer='rmsprop',
@@ -291,7 +302,7 @@ def L2X(datatype, train = True):
 
 	# For now samples is a matrix instead of a vector
 	
-	scores = pred_model.predict(x_val, verbose = 1, batch_size = 1)
+	scores = pred_model.predict(x_val, verbose = 1, batch_size = BATCH_SIZE)
 
 
 	# We need to write a new compute_median_rank to do analysis
