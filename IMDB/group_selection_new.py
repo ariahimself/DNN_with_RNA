@@ -37,8 +37,8 @@ tf.set_random_seed(10086)
 np.random.seed(10086)
 max_features = 5000
 maxlen = 100
-num_groups = 8
-num_important_groups = 5 
+num_groups = 2
+num_important_groups = 1
 batch_size = 40
 embedding_dims = 50
 filters = 250
